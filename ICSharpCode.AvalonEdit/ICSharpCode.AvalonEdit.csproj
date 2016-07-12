@@ -55,6 +55,12 @@
     <DebugType>Full</DebugType>
     <DefineTrace>True</DefineTrace>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|WithNRefactory'">
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|WithNRefactory'">
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.Targets" />
   <ItemGroup>
     <Reference Include="ICSharpCode.NRefactory, Version=5.0.0.0, Culture=neutral, PublicKeyToken=d4bfe873e7598c49, processorArchitecture=MSIL">
@@ -473,4 +479,61 @@
   <ItemGroup>
     <None Include="packages.config" />
   </ItemGroup>
+  <UsingTask TaskName="VersionGenerator" TaskFactory="CodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.v4.0.dll">
+    <ParameterGroup>
+      <VersionString ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+            var diff = new DateTime((DateTime.UtcNow - new DateTime(2016, 1, 1)).Ticks);
+            VersionString = (diff.Year).ToString() + "." + (diff.DayOfYear).ToString() + "." + diff.Hour.ToString() + "." + (diff.Minute * 60 + diff.Second).ToString();
+        ]]></Code>
+    </Task>
+  </UsingTask>
+  <UsingTask TaskName="OldPackageRemover" TaskFactory="CodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.v4.0.dll">
+    <ParameterGroup>
+      <PackageOutputDirectory ParameterType="System.String" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+          var dir = new DirectoryInfo(PackageOutputDirectory);
+          foreach (var file in dir.EnumerateFiles("*.nupkg"))
+            file.Delete();
+        ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="AfterBuild" Condition=" '$(Configuration)' == 'Release'">
+    <OldPackageRemover PackageOutputDirectory="$(ProjectDir)$(OutDir)" />
+    <VersionGenerator>
+      <Output PropertyName="VersionString" TaskParameter="VersionString" />
+    </VersionGenerator>
+    <Exec Command="..\.nuget\nuget pack $(ProjectPath) -version $(VersionString) -OutputDirectory $(OutDir)">
+    </Exec>
+  </Target>
+  <UsingTask TaskName="PackageFinder" TaskFactory="CodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.v4.0.dll">
+    <ParameterGroup>
+      <PackageOutputDirectory ParameterType="System.String" />
+      <PackageToPublish ParameterType="System.String" Output="True" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+          PackageToPublish = "";
+          var dir = new DirectoryInfo(PackageOutputDirectory);
+          foreach (var file in dir.EnumerateFiles("*.nupkg")) {
+            PackageToPublish = file.FullName;
+            break;
+          }
+        ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="PublishPackage" DependsOnTargets="AfterBuild">
+    <PackageFinder PackageOutputDirectory="$(ProjectDir)$(OutDir)">
+      <Output PropertyName="PackageToPublish" TaskParameter="PackageToPublish" />
+    </PackageFinder>
+    <PackageFinder PackageOutputDirectory="$(ProjectDir)$(OutDir)">
+      <Output PropertyName="PackageToPublish" TaskParameter="PackageToPublish" />
+    </PackageFinder>
+    <Error Condition="'$(PackageToPublish)'==''" Text="NuGet Package was not found." />
+    <Exec Command="..\.nuget\nuget push $(PackageToPublish) com.ca.idb2.key0 -Source http://skoro02-i164736/Nuget/api/v2/package" />
+  </Target>
 </Project>
